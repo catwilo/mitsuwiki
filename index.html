@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mitsuwiki</title>
+<script src="marked.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0d1117;--bg2:#161b22;--bg3:#21262d;
+    --border:#30363d;--text:#c9d1d9;--muted:#8b949e;
+    --accent:#58a6ff;--green:#3fb950;
+    --font-mono:'Fira Mono','Cascadia Code','JetBrains Mono',monospace;
+  }
+  body{background:var(--bg);color:var(--text);font-family:var(--font-mono);
+    font-size:14px;display:flex;height:100vh;overflow:hidden}
+
+  /* sidebar */
+  #sidebar{width:260px;min-width:180px;max-width:340px;background:var(--bg2);
+    border-right:1px solid var(--border);display:flex;flex-direction:column;
+    resize:horizontal;overflow:auto}
+  #sidebar-header{padding:12px 14px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:8px}
+  #sidebar-header h1{font-size:15px;color:var(--accent);letter-spacing:.5px}
+  #search-box{width:100%;margin:0;padding:8px 14px;
+    background:var(--bg3);border:none;border-bottom:1px solid var(--border);
+    color:var(--text);font-family:var(--font-mono);font-size:13px;outline:none}
+  #search-box::placeholder{color:var(--muted)}
+  #tree{flex:1;overflow-y:auto;padding:6px 0}
+  .cat{padding:6px 14px 2px;color:var(--muted);font-size:11px;
+    text-transform:uppercase;letter-spacing:1px;user-select:none}
+  .note{padding:5px 14px 5px 22px;cursor:pointer;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+  .note:hover,.note.active{background:var(--bg3);color:var(--accent)}
+  .note.hidden{display:none}
+
+  /* content */
+  #content{flex:1;overflow-y:auto;padding:32px 40px;max-width:860px}
+  #content.empty{display:flex;align-items:center;justify-content:center;
+    color:var(--muted);font-size:15px}
+
+  /* markdown */
+  #md h1,#md h2,#md h3,#md h4{color:var(--accent);margin:1.4em 0 .5em}
+  #md h1{font-size:1.6em;border-bottom:1px solid var(--border);padding-bottom:.3em}
+  #md h2{font-size:1.3em}
+  #md p{line-height:1.7;margin:.6em 0;color:var(--text)}
+  #md ul,#md ol{margin:.5em 0 .5em 1.4em;line-height:1.7}
+  #md code{background:var(--bg3);padding:2px 6px;border-radius:4px;
+    font-family:var(--font-mono);font-size:.92em;color:var(--green)}
+  #md pre{background:var(--bg3);border:1px solid var(--border);
+    border-radius:6px;padding:14px;overflow-x:auto;margin:.8em 0}
+  #md pre code{background:none;padding:0;color:var(--text)}
+  #md blockquote{border-left:3px solid var(--accent);padding:.3em 1em;
+    color:var(--muted);margin:.6em 0}
+  #md a{color:var(--accent);text-decoration:none}
+  #md a:hover{text-decoration:underline}
+  #md hr{border:none;border-top:1px solid var(--border);margin:1.2em 0}
+  #md table{border-collapse:collapse;width:100%;margin:.8em 0}
+  #md th,#md td{border:1px solid var(--border);padding:6px 12px;text-align:left}
+  #md th{background:var(--bg3);color:var(--accent)}
+
+  /* scrollbar */
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-track{background:var(--bg2)}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+  /* mobile */
+  @media(max-width:600px){
+    #sidebar{width:100%;max-width:100%;height:40vh;resize:none;
+      border-right:none;border-bottom:1px solid var(--border)}
+    body{flex-direction:column}
+    #content{padding:16px}
+  }
+</style>
+</head>
+<body>
+<nav id="sidebar">
+  <div id="sidebar-header"><h1>⬡ mitsuwiki</h1></div>
+  <input id="search-box" placeholder="buscar nota..." type="search">
+  <div id="tree"></div>
+</nav>
+<main id="content" class="empty"><span id="placeholder">← seleccioná una nota</span></main>
+
+<script>
+const tree  = document.getElementById('tree');
+const box   = document.getElementById('search-box');
+const main  = document.getElementById('content');
+let notes   = [];
+let active  = null;
+
+async function loadIndex() {
+  const r = await fetch('notes.json');
+  notes = await r.json();
+  renderTree(notes);
+}
+
+function renderTree(list) {
+  tree.innerHTML = '';
+  const cats = {};
+  list.forEach(n => {
+    const parts = n.path.replace('notes/','').split('/');
+    const cat   = parts.length > 1 ? parts[0] : 'misc';
+    if (!cats[cat]) cats[cat] = [];
+    cats[cat].push(n);
+  });
+  Object.keys(cats).sort().forEach(cat => {
+    const h = document.createElement('div');
+    h.className = 'cat'; h.textContent = cat;
+    tree.appendChild(h);
+    cats[cat].forEach(n => {
+      const d = document.createElement('div');
+      d.className = 'note';
+      d.textContent = n.title;
+      d.dataset.path = n.path;
+      d.onclick = () => openNote(n, d);
+      tree.appendChild(d);
+    });
+  });
+}
+
+async function openNote(n, el) {
+  if (active) active.classList.remove('active');
+  active = el; el.classList.add('active');
+  main.classList.remove('empty');
+  const r = await fetch(n.path);
+  const md = await r.text();
+  main.innerHTML = '<div id="md">' + marked.parse(md) + '</div>';
+  main.scrollTop = 0;
+  document.title = n.title + ' — mitsuwiki';
+}
+
+box.addEventListener('input', () => {
+  const q = box.value.toLowerCase();
+  const filtered = q ? notes.filter(n =>
+    n.title.toLowerCase().includes(q) ||
+    n.path.toLowerCase().includes(q)
+  ) : notes;
+  renderTree(filtered);
+});
+
+loadIndex().catch(() => {
+  tree.innerHTML = '<div class="cat">sin notas</div>';
+});
+</script>
+</body>
+</html>
